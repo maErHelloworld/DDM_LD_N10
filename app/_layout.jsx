@@ -1,6 +1,9 @@
 // |||| VERSAO SEM ESTAR LIGADA A FIREBASE REAL!!!!!   //
 
-
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
+import { initializeApp } from 'firebase/app';
+import { createUserWithEmailAndPassword, getReactNativePersistence, initializeAuth, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, query, setDoc, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -14,88 +17,179 @@ import {
 } from 'react-native';
 
 // ============================================
-// SIMULAÇÃO FIREBASE
+// FIREBASE CONFIG
 // ============================================
-let taskIdCounter = 10000;
-let userIdCounter = 10000;
-
-const firebaseDB = {
-  users: [
-    { id: 'user_1', username: 'joao_gestor', email: 'joao@test.com', type: 'Gestor', password: '123456' },
-    { id: 'user_2', username: 'maria_prog', email: 'maria@test.com', type: 'Programador', managerId: 'user_1', password: '123456' },
-    { id: 'user_3', username: 'pedro_prog', email: 'pedro@test.com', type: 'Programador', managerId: 'user_1', password: '123456' }
-  ],
-  tasks: [
-    { id: 'task_1', title: 'API Login', managerId: 'user_1', assignedTo: 'user_2', status: 'Done', order: 1, sp: 5, type: 'Feature', actualStart: new Date('2025-01-06'), actualEnd: new Date('2025-01-08') },
-    { id: 'task_2', title: 'Database Setup', managerId: 'user_1', assignedTo: 'user_3', status: 'Doing', order: 1, sp: 3, type: 'Setup', actualStart: new Date('2025-01-07'), actualEnd: null },
-    { id: 'task_3', title: 'UI Components', managerId: 'user_1', assignedTo: 'user_2', status: 'ToDo', order: 2, sp: 8, type: 'Feature', actualStart: null, actualEnd: null },
-    { id: 'task_4', title: 'Frontend Design', managerId: 'user_1', assignedTo: 'user_3', status: 'Done', order: 2, sp: 5, type: 'Feature', actualStart: new Date('2025-01-03'), actualEnd: new Date('2025-01-07') }
-  ]
+const firebaseConfig = {
+  apiKey: "AIzaSyCwVIED8PVoMUIqTNy6bR0D4WtCZvlkA50",
+  authDomain: "itasks-c30b1.firebaseapp.com",
+  projectId: "itasks-c30b1",
+  storageBucket: "itasks-c30b1.firebasestorage.app",
+  messagingSenderId: "854440399612",
+  appId: "1:854440399612:web:ee598723e6a6533afafd79"
 };
+
+const app = initializeApp(firebaseConfig);
+const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+});
+const db = getFirestore(app);
 
 // ============================================
 // FIREBASE SERVICE
 // ============================================
 const FirebaseService = {
+ 
   signIn: async (email, password) => {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        const user = firebaseDB.users.find(u => u.email === email && u.password === password);
-        if (user) resolve(user);
-        else reject(new Error('Email ou password inválidos!'));
-      }, 500);
-    });
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+    
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        return { ...userData, uid: user.uid };
+      }
+      return null;
+    } catch (error) {
+      console.log("ERRO NO LOGIN:", error);
+      throw new Error(error.message);
+    }
   },
-  signOut: async () => Promise.resolve(),
-  getUsers: async () => new Promise(resolve => setTimeout(() => resolve(firebaseDB.users), 300)),
-  getTasks: async () => new Promise(resolve => setTimeout(() => resolve(firebaseDB.tasks), 300)),
-  addTask: async (taskData) => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const newTask = { ...taskData, id: `task_${++taskIdCounter}`, status: 'ToDo', actualStart: null, actualEnd: null };
-        firebaseDB.tasks.push(newTask);
-        resolve(newTask);
-      }, 300);
-    });
+
+ 
+  signOut: async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      throw error;
+    }
   },
-  updateTask: async (taskId, updates) => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const index = firebaseDB.tasks.findIndex(t => t.id === taskId);
-        if (index !== -1) {
-          firebaseDB.tasks[index] = { ...firebaseDB.tasks[index], ...updates };
-          resolve(firebaseDB.tasks[index]);
-        }
-      }, 300);
-    });
+
+  
+  getUsers: async () => {
+    try {
+      const q = query(collection(db, 'users'));
+      const querySnapshot = await getDocs(q);
+      const users = [];
+      querySnapshot.forEach((doc) => {
+        users.push({ uid: doc.id, ...doc.data() });
+      });
+      return users;
+    } catch (error) {
+      console.error('Erro ao buscar utilizadores:', error);
+      return [];
+    }
   },
+
+ 
   addUser: async (userData) => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const newUser = { ...userData, id: `user_${++userIdCounter}` };
-        firebaseDB.users.push(newUser);
-        resolve(newUser);
-      }, 300);
-    });
+    try {
+     
+      const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
+      const uid = userCredential.user.uid;
+
+      
+      const newUser = {
+        uid,
+        username: userData.username,
+        email: userData.email,
+        type: userData.type || 'Programador',
+        createdAt: new Date(),
+      };
+      await setDoc(doc(db, 'users', uid), newUser);
+      return { uid, ...newUser };
+    } catch (error) {
+      throw new Error('Erro ao criar utilizador: ' + error.message);
+    }
   },
+
+  
   deleteUser: async (userId) => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        firebaseDB.users = firebaseDB.users.filter(u => u.id !== userId);
-        resolve();
-      }, 300);
-    });
-  }
+    try {
+      await deleteDoc(doc(db, 'users', userId));
+    } catch (error) {
+      throw error;
+    }
+  },
+
+
+  updateUser: async (userId, updates) => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, updates);
+      return { uid: userId, ...updates };
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  
+  getTasks: async () => {
+    try {
+      const q = query(collection(db, 'tasks'));
+      const querySnapshot = await getDocs(q);
+      const tasks = [];
+      querySnapshot.forEach((doc) => {
+        tasks.push({ id: doc.id, ...doc.data() });
+      });
+      return tasks;
+    } catch (error) {
+      console.error('Erro ao buscar tarefas:', error);
+      return [];
+    }
+  },
+
+ 
+  addTask: async (taskData) => {
+    try {
+      const newTask = {
+        ...taskData,
+        status: 'ToDo',
+        createdAt: new Date(),
+        actualStart: null,
+        actualEnd: null,
+      };
+      const docRef = await addDoc(collection(db, 'tasks'), newTask);
+      return { id: docRef.id, ...newTask };
+    } catch (error) {
+      throw error;
+    }
+  },
+
+ 
+  updateTask: async (taskId, updates) => {
+    try {
+      const taskRef = doc(db, 'tasks', taskId);
+      await updateDoc(taskRef, updates);
+      return { id: taskId, ...updates };
+    } catch (error) {
+      throw error;
+    }
+  },
+
+ 
+  deleteTask: async (taskId) => {
+    try {
+      await deleteDoc(doc(db, 'tasks', taskId));
+    } catch (error) {
+      throw error;
+    }
+  },
 };
 
 // ============================================
-// TELA: LOGIN
+// LOGIN
 // ============================================
 function LoginScreen({ onSignIn, loading }) {
-  const [email, setEmail] = useState('joao@test.com');
-  const [password, setPassword] = useState('123456');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const handleLogin = () => {
+    if (!email || !password) {
+      Alert.alert('Erro', 'Preencha email e password!');
+      return;
+    }
     onSignIn(email, password);
   };
 
@@ -108,7 +202,9 @@ function LoginScreen({ onSignIn, loading }) {
           placeholder="Email"
           value={email}
           onChangeText={setEmail}
-          placeholderTextColor="#999"
+          placeholderTextColor="#666666"
+          keyboardType="email-address"
+          autoCapitalize="none"
         />
         <TextInput
           style={styles.input}
@@ -116,7 +212,7 @@ function LoginScreen({ onSignIn, loading }) {
           value={password}
           onChangeText={setPassword}
           secureTextEntry
-          placeholderTextColor="#999"
+          placeholderTextColor="#666666"
         />
         <TouchableOpacity
           style={[styles.button, styles.buttonBlue, loading && styles.buttonDisabled]}
@@ -128,13 +224,12 @@ function LoginScreen({ onSignIn, loading }) {
           </Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.hint}>Demo: joao@test.com | Password: 123456</Text>
     </View>
   );
 }
 
 // ============================================
-// TELA: KANBAN
+// KANBAN
 // ============================================
 function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpdateTask, loading }) {
   const [showForm, setShowForm] = useState(false);
@@ -156,7 +251,7 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
       Alert.alert('Erro', 'Preencha todos os campos!');
       return;
     }
-    onAddTask({ title: taskTitle, assignedTo, sp: parseInt(sp), type: taskType });
+    onAddTask({ title: taskTitle, assignedTo, sp: parseInt(sp), type: taskType, managerId: authUser.uid });
     setTaskTitle('');
     setAssignedTo('');
     setSp('5');
@@ -164,7 +259,7 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
     setShowForm(false);
   };
 
-  const filtered = tasks.filter(t => t.assignedTo === authUser.id || authUser.type === 'Gestor');
+  const filtered = tasks.filter(t => t.assignedTo === authUser.uid || authUser.type === 'Gestor');
   const todo = filtered.filter(t => t.status === 'ToDo');
   const doing = filtered.filter(t => t.status === 'Doing');
   const done = filtered.filter(t => t.status === 'Done');
@@ -173,7 +268,10 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
     <View style={styles.taskCard}>
       <Text style={styles.taskTitle}>{task.title}</Text>
       <Text style={styles.taskInfo}>{task.sp} SP • {task.type}</Text>
-      {authUser.type === 'Programador' && task.assignedTo === authUser.id && task.status === 'ToDo' && (
+      <Text style={styles.taskAssigned}>
+        👤 {users.find(u => u.uid === task.assignedTo)?.username || 'N/A'}
+      </Text>
+      {authUser.type === 'Programador' && task.assignedTo === authUser.uid && task.status === 'ToDo' && (
         <TouchableOpacity
           style={[styles.button, styles.buttonYellow]}
           onPress={() => onUpdateStatus(task.id, 'Doing')}
@@ -181,7 +279,7 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
           <Text style={styles.buttonText}>Começar</Text>
         </TouchableOpacity>
       )}
-      {authUser.type === 'Programador' && task.assignedTo === authUser.id && task.status === 'Doing' && (
+      {authUser.type === 'Programador' && task.assignedTo === authUser.uid && task.status === 'Doing' && (
         <TouchableOpacity
           style={[styles.button, styles.buttonGreen]}
           onPress={() => onUpdateStatus(task.id, 'Done')}
@@ -220,6 +318,7 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
         )}
       </View>
 
+     
       <Modal visible={showForm} transparent animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
@@ -229,7 +328,7 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
               placeholder="Título"
               value={taskTitle}
               onChangeText={setTaskTitle}
-              placeholderTextColor="#999"
+              placeholderTextColor="#666666"
             />
             
             <Text style={styles.label}>Atribuir a:</Text>
@@ -238,17 +337,17 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
               onPress={() => setShowProgrammerDropdown(!showProgrammerDropdown)}
             >
               <Text style={styles.dropdownButtonText}>
-                {assignedTo ? users.find(u => u.id === assignedTo)?.username : 'Selecione um Programador'}
+                {assignedTo ? users.find(u => u.uid === assignedTo)?.username : 'Selecione um Programador'}
               </Text>
             </TouchableOpacity>
             {showProgrammerDropdown && (
               <View style={styles.dropdownMenu}>
                 {users.filter(u => u.type === 'Programador').map(u => (
                   <TouchableOpacity
-                    key={u.id}
+                    key={u.uid}
                     style={styles.dropdownItem}
                     onPress={() => {
-                      setAssignedTo(u.id);
+                      setAssignedTo(u.uid);
                       setShowProgrammerDropdown(false);
                     }}
                   >
@@ -264,7 +363,7 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
               value={sp}
               onChangeText={setSp}
               keyboardType="numeric"
-              placeholderTextColor="#999"
+              placeholderTextColor="#666666"
             />
 
             <Text style={styles.label}>Tipo:</Text>
@@ -315,6 +414,7 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
         </View>
       </Modal>
 
+     
       <Modal visible={showEditForm} transparent animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
@@ -324,7 +424,7 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
               placeholder="Título"
               value={editTitle}
               onChangeText={setEditTitle}
-              placeholderTextColor="#999"
+              placeholderTextColor="#666666"
             />
             
             <TextInput
@@ -333,7 +433,7 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
               value={editSp}
               onChangeText={setEditSp}
               keyboardType="numeric"
-              placeholderTextColor="#999"
+              placeholderTextColor="#666666"
             />
 
             <Text style={styles.label}>Tipo:</Text>
@@ -390,23 +490,27 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
         </View>
       </Modal>
 
+     
       <View style={styles.kanbanContainer}>
         <View style={styles.column}>
-          <Text style={styles.columnTitle}>📋 To Do ({todo.length})</Text>
+          <Text style={styles.columnTitle}>To Do ({todo.length})</Text>
           {todo.map((t, idx) => <TaskCard key={`todo_${t.id}_${idx}`} task={t} />)}
         </View>
 
         <View style={styles.column}>
-          <Text style={styles.columnTitle}>⚡ Doing ({doing.length})</Text>
+          <Text style={styles.columnTitle}>Doing ({doing.length})</Text>
           {doing.map((t, idx) => <TaskCard key={`doing_${t.id}_${idx}`} task={t} />)}
         </View>
 
         <View style={styles.column}>
-          <Text style={styles.columnTitle}>✅ Done ({done.length})</Text>
+          <Text style={styles.columnTitle}>Done ({done.length})</Text>
           {done.map((t, idx) => (
             <View key={`done_${t.id}_${idx}`} style={[styles.taskCard, styles.taskCardDone]}>
               <Text style={[styles.taskTitle, styles.taskTitleDone]}>{t.title}</Text>
               <Text style={styles.taskInfo}>{t.sp} SP • {t.type}</Text>
+              <Text style={styles.taskAssigned}>
+                👤 {users.find(u => u.uid === t.assignedTo)?.username || 'N/A'}
+              </Text>
             </View>
           ))}
         </View>
@@ -416,7 +520,7 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
 }
 
 // ============================================
-// TELA: UTILIZADORES
+// GESTÃO DE UTILIZADORES
 // ============================================
 function UsersScreen({ authUser, users, onAddUser, onDeleteUser, loading }) {
   const [showForm, setShowForm] = useState(false);
@@ -425,7 +529,7 @@ function UsersScreen({ authUser, users, onAddUser, onDeleteUser, loading }) {
   const [password, setPassword] = useState('');
 
   const handleAddUser = () => {
-    if (!username || !email) {
+    if (!username || !email || !password) {
       Alert.alert('Erro', 'Preencha todos os campos!');
       return;
     }
@@ -457,14 +561,16 @@ function UsersScreen({ authUser, users, onAddUser, onDeleteUser, loading }) {
               placeholder="Username"
               value={username}
               onChangeText={setUsername}
-              placeholderTextColor="#999"
+              placeholderTextColor="#666666"
             />
             <TextInput
               style={styles.input}
               placeholder="Email"
               value={email}
               onChangeText={setEmail}
-              placeholderTextColor="#999"
+              placeholderTextColor="#666666"
+              keyboardType="email-address"
+              autoCapitalize="none"
             />
             <TextInput
               style={styles.input}
@@ -472,7 +578,7 @@ function UsersScreen({ authUser, users, onAddUser, onDeleteUser, loading }) {
               value={password}
               onChangeText={setPassword}
               secureTextEntry
-              placeholderTextColor="#999"
+              placeholderTextColor="#666666"
             />
             <View style={styles.buttonGroup}>
               <TouchableOpacity
@@ -496,16 +602,16 @@ function UsersScreen({ authUser, users, onAddUser, onDeleteUser, loading }) {
 
       <View style={styles.usersList}>
         {users.map((u, idx) => (
-          <View key={`user_${u.id}_${idx}`} style={styles.userCard}>
+          <View key={`user_${u.uid}_${idx}`} style={styles.userCard}>
             <View>
               <Text style={styles.userName}>{u.username}</Text>
               <Text style={styles.userEmail}>{u.email}</Text>
               <Text style={styles.userType}>{u.type}</Text>
             </View>
-            {authUser.id !== u.id && (
+            {authUser.uid !== u.uid && (
               <TouchableOpacity
                 style={[styles.button, styles.buttonRed]}
-                onPress={() => onDeleteUser(u.id)}
+                onPress={() => onDeleteUser(u.uid)}
               >
                 <Text style={styles.buttonText}>Eliminar</Text>
               </TouchableOpacity>
@@ -518,19 +624,19 @@ function UsersScreen({ authUser, users, onAddUser, onDeleteUser, loading }) {
 }
 
 // ============================================
-// TELA: TAREFAS CONCLUÍDAS
+// TAREFAS CONCLUÍDAS
 // ============================================
 function CompletedPage({ authUser, tasks, users }) {
-  const completed = tasks.filter(t => t.status === 'Done' && t.managerId === authUser.id);
+  const completed = tasks.filter(t => t.status === 'Done' && t.managerId === authUser.uid);
 
   const handleExportCSV = () => {
     try {
       const csvData = 'Programador,Tarefa,Tipo,SP\n' + completed.map(t => {
-        const prog = users.find(u => u.id === t.assignedTo);
+        const prog = users.find(u => u.uid === t.assignedTo);
         return `${prog?.username || '-'},${t.title},${t.type},${t.sp}`;
       }).join('\n');
 
-      Alert.alert('CSV Gerado', csvData);
+      Alert.alert('CSV Gerado com sucesso', csvData);
     } catch (error) {
       Alert.alert('Erro', 'Erro ao gerar CSV');
     }
@@ -553,7 +659,7 @@ function CompletedPage({ authUser, tasks, users }) {
           <Text style={styles.noData}>Nenhuma tarefa concluída</Text>
         ) : (
           completed.map((t, idx) => {
-            const prog = users.find(u => u.id === t.assignedTo);
+            const prog = users.find(u => u.uid === t.assignedTo);
             return (
               <View key={`completed_${t.id}_${idx}`} style={styles.userCard}>
                 <View>
@@ -571,7 +677,7 @@ function CompletedPage({ authUser, tasks, users }) {
 }
 
 // ============================================
-// TELA: EDITAR PERFIL
+// PERFIL
 // ============================================
 function ProfilePage({ authUser, users, onUpdateUser, loading }) {
   const [editingUser, setEditingUser] = useState(authUser);
@@ -579,7 +685,7 @@ function ProfilePage({ authUser, users, onUpdateUser, loading }) {
 
   const handleEditUser = (user) => {
     setEditingUser(user);
-    setSelectedUserId(user.id);
+    setSelectedUserId(user.uid);
   };
 
   const handleSaveProfile = async () => {
@@ -587,16 +693,17 @@ function ProfilePage({ authUser, users, onUpdateUser, loading }) {
       Alert.alert('Erro', 'Preencha todos os campos!');
       return;
     }
-    onUpdateUser(editingUser.id, editingUser);
+    onUpdateUser(editingUser.uid, { username: editingUser.username, email: editingUser.email });
   };
 
-  const getAvatarColor = (userId) => {
+  const getAvatarColor = (id) => {
     const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#ffa502', '#6c5ce7', '#a29bfe'];
-    const index = userId.charCodeAt(userId.length - 1) % colors.length;
+    const index = id ? id.charCodeAt(id.length - 1) % colors.length : 0;
     return colors[index];
   };
 
   const getInitials = (username) => {
+    if (!username) return '??';
     return username.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
@@ -611,12 +718,12 @@ function ProfilePage({ authUser, users, onUpdateUser, loading }) {
           <Text style={styles.label}>Selecione utilizador para editar:</Text>
           {users.map(u => (
             <TouchableOpacity
-              key={u.id}
-              style={[styles.userCard, selectedUserId === u.id && { backgroundColor: '#3a3a3a' }]}
+              key={u.uid}
+              style={[styles.userCard, selectedUserId === u.uid && { backgroundColor: '#3a3a3a' }]}
               onPress={() => handleEditUser(u)}
             >
               <View style={styles.userCardContent}>
-                <View style={[styles.avatarSmall, { backgroundColor: getAvatarColor(u.id) }]}>
+                <View style={[styles.avatarSmall, { backgroundColor: getAvatarColor(u.uid) }]}>
                   <Text style={styles.avatarTextSmall}>{getInitials(u.username)}</Text>
                 </View>
                 <View>
@@ -632,14 +739,14 @@ function ProfilePage({ authUser, users, onUpdateUser, loading }) {
 
       <View style={{ padding: 16 }}>
         <View style={styles.avatarContainer}>
-          <View style={[styles.avatar, { backgroundColor: getAvatarColor(editingUser.id) }]}>
+          <View style={[styles.avatar, { backgroundColor: getAvatarColor(editingUser.uid) }]}>
             <Text style={styles.avatarText}>{getInitials(editingUser.username)}</Text>
           </View>
           <Text style={styles.avatarLabel}>{editingUser.username}</Text>
         </View>
 
         <Text style={[styles.label, { marginBottom: 16, fontSize: 16, marginTop: 20 }]}>
-          {editingUser.id === authUser.id ? 'Editar Meu Perfil' : `Editar ${editingUser.username}`}
+          {editingUser.uid === authUser.uid ? 'Editar Meu Perfil' : `Editar ${editingUser.username}`}
         </Text>
 
         <Text style={styles.label}>Nome de Utilizador:</Text>
@@ -680,6 +787,8 @@ function ProfilePage({ authUser, users, onUpdateUser, loading }) {
 }
 
 // ============================================
+// APP
+// ============================================
 export default function App() {
   const [authUser, setAuthUser] = useState(null);
   const [currentPage, setCurrentPage] = useState('kanban');
@@ -687,30 +796,40 @@ export default function App() {
   const [users, setUsers] = useState([]);
   const [tasks, setTasks] = useState([]);
 
+  // Carregar dados após login
+  const loadData = async () => {
+    if (!auth.currentUser) {
+      console.log('Nenhum utilizador autenticado');
+      return;
+    }
+    try {
+      const [usersData, tasksData] = await Promise.all([
+        FirebaseService.getUsers(),
+        FirebaseService.getTasks()
+      ]);
+      const uniqueUsers = Array.from(new Map(usersData.map(item => [item.uid, item])).values());
+      const uniqueTasks = Array.from(new Map(tasksData.map(item => [item.id, item])).values());
+      setUsers(uniqueUsers);
+      setTasks(uniqueTasks);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+    }
+  };
+
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [usersData, tasksData] = await Promise.all([
-          FirebaseService.getUsers(),
-          FirebaseService.getTasks()
-        ]);
-        const uniqueUsers = Array.from(new Map(usersData.map(item => [item.id, item])).values());
-        const uniqueTasks = Array.from(new Map(tasksData.map(item => [item.id, item])).values());
-        setUsers(uniqueUsers);
-        setTasks(uniqueTasks);
-      } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-      }
-    };
     loadData();
-  }, []);
+  }, [authUser]);
 
   const handleSignIn = async (email, password) => {
     setLoading(true);
     try {
       const user = await FirebaseService.signIn(email, password);
-      setAuthUser(user);
-      setCurrentPage('kanban');
+      if (user) {
+        setAuthUser(user);
+        setCurrentPage('kanban');
+      } else {
+        Alert.alert('Erro', 'Utilizador não encontrado!');
+      }
     } catch (error) {
       Alert.alert('Erro', error.message);
     }
@@ -722,25 +841,8 @@ export default function App() {
     try {
       await FirebaseService.signOut();
       setAuthUser(null);
-    } catch (error) {
-      console.error('Erro ao fazer logout:', error);
-    }
-    setLoading(false);
-  };
-
-  const handleUpdateUser = async (userId, updates) => {
-    setLoading(true);
-    try {
-      const index = firebaseDB.users.findIndex(u => u.id === userId);
-      if (index !== -1) {
-        firebaseDB.users[index] = { ...firebaseDB.users[index], ...updates };
-        const allUsers = await FirebaseService.getUsers();
-        setUsers(allUsers);
-        if (userId === authUser.id) {
-          setAuthUser({ ...authUser, ...updates });
-        }
-        Alert.alert('Sucesso', 'Perfil atualizado com sucesso!');
-      }
+      setUsers([]);
+      setTasks([]);
     } catch (error) {
       Alert.alert('Erro', error.message);
     }
@@ -750,43 +852,9 @@ export default function App() {
   const handleAddTask = async (taskData) => {
     setLoading(true);
     try {
-      const task = await FirebaseService.addTask({
-        ...taskData,
-        managerId: authUser.id,
-        order: 1
-      });
-      const allTasks = await FirebaseService.getTasks();
-      setTasks(allTasks);
+      const newTask = await FirebaseService.addTask(taskData);
+      setTasks([...tasks, newTask]);
       Alert.alert('Sucesso', 'Tarefa criada com sucesso!');
-    } catch (error) {
-      Alert.alert('Erro', error.message);
-    }
-    setLoading(false);
-  };
-
-  const handleAddUser = async (userData) => {
-    setLoading(true);
-    try {
-      const user = await FirebaseService.addUser(userData);
-      const allUsers = await FirebaseService.getUsers();
-      setUsers(allUsers);
-      Alert.alert('Sucesso', 'Utilizador criado com sucesso!');
-    } catch (error) {
-      Alert.alert('Erro', error.message);
-    }
-    setLoading(false);
-  };
-
-  const handleDeleteUser = async (userId) => {
-    if (authUser.id === userId) {
-      Alert.alert('Erro', 'Não podes eliminar o teu próprio utilizador!');
-      return;
-    }
-    setLoading(true);
-    try {
-      await FirebaseService.deleteUser(userId);
-      setUsers(prevUsers => prevUsers.filter(u => u.id !== userId));
-      Alert.alert('Sucesso', 'Utilizador eliminado com sucesso!');
     } catch (error) {
       Alert.alert('Erro', error.message);
     }
@@ -821,7 +889,7 @@ export default function App() {
       }
 
       await FirebaseService.updateTask(taskId, updates);
-      setTasks(prevTasks => prevTasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
+      setTasks(tasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
     } catch (error) {
       Alert.alert('Erro', error.message);
     }
@@ -832,9 +900,51 @@ export default function App() {
     setLoading(true);
     try {
       await FirebaseService.updateTask(taskId, updates);
-      const allTasks = await FirebaseService.getTasks();
-      setTasks(allTasks);
+      setTasks(tasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
       Alert.alert('Sucesso', 'Tarefa atualizada com sucesso!');
+    } catch (error) {
+      Alert.alert('Erro', error.message);
+    }
+    setLoading(false);
+  };
+
+  const handleAddUser = async (userData) => {
+    setLoading(true);
+    try {
+      const newUser = await FirebaseService.addUser(userData);
+      setUsers([...users, newUser]);
+      Alert.alert('Sucesso', 'Utilizador criado com sucesso!');
+    } catch (error) {
+      Alert.alert('Erro', error.message);
+    }
+    setLoading(false);
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (authUser.uid === userId) {
+      Alert.alert('Erro', 'Não podes eliminar o teu próprio utilizador!');
+      return;
+    }
+    setLoading(true);
+    try {
+      await FirebaseService.deleteUser(userId);
+      setUsers(users.filter(u => u.uid !== userId));
+      Alert.alert('Sucesso', 'Utilizador eliminado com sucesso!');
+    } catch (error) {
+      Alert.alert('Erro', error.message);
+    }
+    setLoading(false);
+  };
+
+  const handleUpdateUser = async (userId, updates) => {
+    setLoading(true);
+    try {
+      await FirebaseService.updateUser(userId, updates);
+      setUsers(users.map(u => u.uid === userId ? { ...u, ...updates } : u));
+      if (userId === authUser.uid) {
+        setAuthUser({ ...authUser, ...updates });
+      }
+      Alert.alert('Sucesso', 'Perfil atualizado com sucesso!');
     } catch (error) {
       Alert.alert('Erro', error.message);
     }
@@ -928,6 +1038,7 @@ export default function App() {
     </View>
   );
 }
+
 
 
 
