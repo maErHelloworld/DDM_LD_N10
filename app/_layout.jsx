@@ -519,6 +519,8 @@ function KanbanScreen({ authUser, tasks, users, onAddTask, onUpdateStatus, onUpd
   );
 }
 
+
+
 // ============================================
 // GESTÃO DE UTILIZADORES
 // ============================================
